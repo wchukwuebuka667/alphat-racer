@@ -19,7 +19,7 @@ export default function App() {
   return (
     <div className="shell">
       <nav>
-        <span className="tag">● TESTNET · CHAIN 46630</span>
+        <span className="tag">● ROBINHOOD CHAIN TESTNET · 46630</span>
         <span className="grow" />
         {account
           ? <span className="tag">{short(account)} <button className="ghost" onClick={() => { setAccount(null); setHold(null); }}>DISCONNECT</button></span>
@@ -28,6 +28,7 @@ export default function App() {
       <div className="stripe" />
       <main className="layout">
         <section className="hero">
+          <a className="kicker" href="https://testnet.vibevibe.fun/" target="_blank" rel="noreferrer">BUILT FOR VIBE/VIBE ↗</a>
           <h1>ALPHAT<br /><span>RACER</span></h1>
           <p className="lede">Dodge the traffic. Beat your best. Hold the token for a gold car and a shield.</p>
           <div className="pit">
@@ -37,11 +38,13 @@ export default function App() {
               : !account ? <p>Connect a wallet to check for the holder perk.</p>
               : <p>{hold ? `${hold.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${hold.symbol} in your wallet` : "Reading your balance…"}</p>}
             <p className={perk ? "perk on" : "perk"}>{perk ? "PERK ACTIVE: GOLD CAR + SHIELD" : `HOLD ${CONFIG.minHold.toLocaleString()} FOR GOLD CAR + SHIELD`}</p>
+            {CONFIG.token && <p className="mute">TOKEN <a href={`${CONFIG.explorer}/token/${CONFIG.token}`} target="_blank" rel="noreferrer">{short(CONFIG.token)}</a> · ROBINHOOD CHAIN TESTNET</p>}
           </div>
           <p className="keys">← → or A D to steer · tap left or right on phone · no wallet needed to play · scores save on this device · testnet only, not financial advice</p>
         </section>
         <Game perk={perk} />
       </main>
+      <footer className="foot">A vibe/vibe project on Robinhood Chain Testnet. Testnet only, not financial advice.</footer>
     </div>
   );
 }
