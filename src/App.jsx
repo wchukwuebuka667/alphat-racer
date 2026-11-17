@@ -40,7 +40,7 @@ export default function App() {
         </div>
         <p className="keys">Dodge traffic and the police. The perk applies when a run starts. No wallet needed to play. Best distance saves on this device. Testnet only, not financial advice.</p>
       </section>
-      <footer className="foot">A vibe/vibe project on Robinhood Chain Testnet.</footer>
+      <footer className="foot">A vibe/vibe project on Robinhood Chain Testnet. Car model: Ferrari 458 Italia by vicent091036 (Sketchfab).</footer>
     </div>
   );
 }

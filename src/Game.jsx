@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 
 const ROAD = 12, FAR = 420, LANES = [-4, 0, 4];
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -14,6 +21,15 @@ const facade = (base) => tex(128, 128, (g, w, h) => {
   for (let y = 8; y < h - 8; y += 30) for (let x = 8; x < w - 8; x += 30) { g.fillStyle = Math.random() < 0.4 ? "#ffd27a" : "#2a2f45"; g.fillRect(x, y, 18, 20); }
 }, true);
 
+let SH;
+const shadowTex = () => SH || (SH = tex(64, 64, (g, w, h) => { const r = g.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w / 2); r.addColorStop(0, "rgba(0,0,0,.7)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, w, h); }));
+const shopTex = () => tex(512, 128, (g, w, h) => {
+  g.fillStyle = "#1a1512"; g.fillRect(0, 0, w, h);
+  for (let x = 6; x < w - 60; x += 104) {
+    g.fillStyle = pick(["#d94f4f", "#2e86de", "#f0b429", "#2ecc71", "#8e44ad", "#f5f2e9"]); g.fillRect(x, 8, 92, 26);
+    g.fillStyle = "#ffd9a0"; g.fillRect(x, 44, 92, 52); g.fillStyle = "#3a2c22"; g.fillRect(x + 44, 44, 4, 52); g.fillRect(x, 100, 92, 22);
+  }
+});
 function makeCar(color, police) {
   const g = new THREE.Group(), L = THREE.MeshLambertMaterial, B = THREE.BoxGeometry;
   const body = new THREE.Mesh(new B(1.9, .6, 4.3), new L({ color })); body.position.y = .6; g.add(body);
@@ -26,10 +42,12 @@ function makeCar(color, police) {
   if (police) {
     const band = new THREE.Mesh(new B(1.94, .22, 2.2), new L({ color: 0xf5f2e9 })); band.position.set(0, .62, .3); g.add(band);
     const r = new THREE.MeshBasicMaterial({ color: 0xff2a2a }), b = new THREE.MeshBasicMaterial({ color: 0x2a6bff });
-    [[-.45, r], [.45, b]].forEach(([x, m]) => { const l = new THREE.Mesh(new B(.7, .16, .3), m); l.position.set(x, 1.45, .3); g.add(l); });
+    [[-.45, r], [.45, b]].forEach(([x, m]) => { const l = new THREE.Mesh(new B(.7, .16, .3), m); l.position.set(x, 1.22, .3); l.userData.keep = true; g.add(l); });
     g.userData.lights = [r, b];
   }
-  g.userData.body = body; return g;
+  const sh = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 5.4), new THREE.MeshBasicMaterial({ map: shadowTex(), transparent: true, depthWrite: false }));
+  sh.rotation.x = -Math.PI / 2; sh.position.y = .03; sh.userData.keep = true; g.add(sh);
+  g.userData.body = body; g.userData.color = color; return g;
 }
 
 export default function Game({ perk }) {
@@ -41,11 +59,16 @@ export default function Game({ perk }) {
 
   useEffect(() => {
     const renderer = new THREE.WebGLRenderer({ canvas: cv.current, antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.25;
     const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(64, 1.6, .1, 600);
     scene.background = tex(2, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h);
       [[0, "#2d2461"], [.5, "#b4577a"], [.85, "#ff9f6b"], [1, "#ffd09a"]].forEach(([p, c]) => gr.addColorStop(p, c)); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
     scene.fog = new THREE.Fog(0xf0a878, 50, 300);
+    scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), .04).texture; scene.environmentIntensity = .6;
+    const composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, cam));
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), .5, .6, .88)); composer.addPass(new OutputPass());
+    const sunD = new THREE.Mesh(new THREE.CircleGeometry(38, 40), new THREE.MeshBasicMaterial({ color: 0xffe1a0, fog: false })); sunD.position.set(0, 20, -420); scene.add(sunD);
     scene.add(new THREE.HemisphereLight(0xffd2a8, 0x2a2a40, 1.2));
     const sun = new THREE.DirectionalLight(0xffb070, 1.3); sun.position.set(-20, 12, -30); scene.add(sun);
 
@@ -64,12 +87,13 @@ export default function Game({ perk }) {
     const facades = ["#7a5a48", "#5c5f72", "#8a6a52", "#4f5a52"].map(facade);
     const bill = tex(512, 230, (g, w) => { g.fillStyle = "#0b0b0d"; g.fillRect(0, 0, w, 230); g.fillStyle = "#ffd400"; g.textAlign = "center"; g.font = "900 96px Impact, sans-serif"; g.fillText("ALPHAT RACER", w / 2, 120);
       g.fillStyle = "#f5f2e9"; g.font = "600 28px monospace"; g.fillText("LIVE ON VIBE/VIBE TESTNET", w / 2, 180); });
-    const NB = 26, SP = 16;
+    const shops = [shopTex(), shopTex(), shopTex()], NB = 26, SP = 16;
     for (const sd of [-1, 1]) for (let i = 0; i < NB; i++) {
       const w = rnd(9, 15), h = rnd(14, 38), geo = new THREE.BoxGeometry(w, h, 14), uv = geo.attributes.uv;
       for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * w / 8, uv.getY(k) * h / 8);
       const m = new THREE.Mesh(geo, new BM({ map: pick(facades), color: 0xd8c0b0 })); m.position.set(sd * (ROAD / 2 + 3 + w / 2), h / 2, 30 - i * SP);
       if (i % 7 === 0) { const b = new THREE.Mesh(new THREE.PlaneGeometry(10, 4.5), new BM({ map: bill })); b.rotation.y = -sd * Math.PI / 2; b.position.set(-sd * (w / 2 - 1), h / 2 + 2.5, 0); m.add(b); }
+      const shop = new THREE.Mesh(new THREE.PlaneGeometry(14, 4.5), new BM({ map: pick(shops), color: 0xe0d0c0 })); shop.rotation.y = -sd * Math.PI / 2; shop.position.set(-sd * (w / 2 + .05), -h / 2 + 2.25, 0); m.add(shop);
       scene.add(m); scroll.push({ m, span: NB * SP });
     }
     const NL = 12, LS = 36;
@@ -82,19 +106,32 @@ export default function Game({ perk }) {
 
     const player = makeCar(0xf5f2e9); scene.add(player);
     const shield = new THREE.Mesh(new THREE.SphereGeometry(2.8, 16, 12), new BM({ color: 0x2de2e6, transparent: true, opacity: .2 }));
-    shield.scale.set(.9, .55, 1.5); shield.position.y = .9; player.add(shield);
+    shield.scale.set(.9, .55, 1.5); shield.position.y = .9; shield.userData.keep = true; player.add(shield);
     const traffic = [];
     const spawn = (t) => { t.police = !!t.isPolice; t.x = pick(LANES); t.sp = t.police ? 0 : rnd(10, 20);
       t.z = t.police ? 45 : -rnd(330, 420); t.mesh.position.set(t.x, 0, t.z); };
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 9; i++) {
       const isPolice = i < 2, mesh = makeCar(isPolice ? 0x15151a : pick([0xc0392b, 0x2980b9, 0x27ae60, 0x8e44ad, 0xe67e22, 0xbdc3c7]), isPolice);
       const t = { mesh, isPolice }; spawn(t); if (!isPolice) t.z = -rnd(40, 400); scene.add(mesh); traffic.push(t);
     }
 
+    let ferrari = null;
+    const dress = (car, color) => {
+      if (!ferrari) return;
+      car.children.forEach((c) => { if (!c.userData.keep) c.visible = false; });
+      const m = ferrari.clone(true), paints = [];
+      m.traverse((o) => { if (!o.isMesh) return;
+        if (o.material.name === "Body_Color") { o.material = new THREE.MeshPhysicalMaterial({ color, metalness: .8, roughness: .3, clearcoat: 1, clearcoatRoughness: .05 }); paints.push(o.material); }
+        else if (o.material.name === "Taillight_Glass") { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0xff1a1a); o.material.emissiveIntensity = 2.5; } });
+      car.add(m); car.userData.paints = paints;
+    };
+    const dressAll = () => [player, ...traffic.map((t) => t.mesh)].forEach((c) => dress(c, c === player ? (perkRef.current ? 0xffd400 : 0xf5f2e9) : c.userData.color));
+    new GLTFLoader().setDRACOLoader(new DRACOLoader().setDecoderPath("/draco/")).load("/models/ferrari.glb", (gl) => {
+      ferrari = gl.scene; ferrari.traverse((o) => { if (/steering|leather|carpet|interior|wipers|carbon/.test(o.name)) o.visible = false; }); dressAll(); });
     const s = { state: "ready", v: 10, x: 0, dist: 0, t: 0, lives: 1, inv: 0, shake: 0 }, keys = { l: 0, r: 0, b: 0 };
     const start = () => {
       Object.assign(s, { state: "play", v: 12, x: 0, dist: 0, t: 0, inv: 0, shake: 0, lives: perkRef.current ? 2 : 1 });
-      player.userData.body.material.color.set(perkRef.current ? 0xffd400 : 0xf5f2e9);
+      (player.userData.paints || [player.userData.body.material]).forEach((m) => m.color.set(perkRef.current ? 0xffd400 : 0xf5f2e9));
       traffic.forEach((t) => { spawn(t); if (!t.police) t.z = -rnd(60, 400); }); setUi((u) => ({ ...u, state: "play" }));
     };
     startRef.current = start;
@@ -110,7 +147,7 @@ export default function Game({ perk }) {
     };
     const down = (e) => kd(e, 1), up = (e) => kd(e, 0);
     addEventListener("keydown", down); addEventListener("keyup", up);
-    const resize = () => { const w = box.current.clientWidth, h = box.current.clientHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); };
+    const resize = () => { const w = box.current.clientWidth, h = box.current.clientHeight; renderer.setSize(w, h, false); composer.setSize(w, h); cam.aspect = w / h; cam.updateProjectionMatrix(); };
     const ro = new ResizeObserver(resize); ro.observe(box.current); resize();
 
     let last = performance.now(), raf, flash = 0;
@@ -138,10 +175,10 @@ export default function Game({ perk }) {
       player.position.x = s.x; player.rotation.z = -(s.steer || 0) * .08; player.rotation.y = -(s.steer || 0) * .12;
       player.visible = !(s.inv > 0 && Math.floor(s.inv * 10) % 2); shield.visible = s.lives > 1;
       const sh = s.shake * (Math.random() - .5);
-      cam.position.set(s.x * .6 + sh, 3.4 + sh * .5, 8.5); cam.lookAt(s.x * .3, 1.4, -20); cam.fov = 62 + s.v * .25; cam.updateProjectionMatrix();
+      cam.position.set(s.x * .6 + sh, 2.4 + sh * .5, 7.2); cam.lookAt(s.x * .3, 1.1, -18); cam.fov = 62 + s.v * .25; cam.updateProjectionMatrix();
       if (lapR.current) { lapR.current.textContent = Math.floor(s.dist / 1500) + 1; spdR.current.textContent = Math.round(s.v * 5.5);
         const m = Math.floor(s.t / 60); timeR.current.textContent = `${String(m).padStart(2, "0")}:${(s.t % 60).toFixed(1).padStart(4, "0")}`; }
-      renderer.render(scene, cam); raf = requestAnimationFrame(loop);
+      composer.render(); raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => { cancelAnimationFrame(raf); ro.disconnect(); removeEventListener("keydown", down); removeEventListener("keyup", up); renderer.dispose(); };
