@@ -69,7 +69,10 @@ function makeCar(color, police) {
 
 export default function Game({ perk }) {
   const box = useRef(null), cv = useRef(null), startRef = useRef(null), perkRef = useRef(perk);
-  const lapR = useRef(null), timeR = useRef(null), spdR = useRef(null), touch = useRef(0);
+  const lapR = useRef(null), timeR = useRef(null), spdR = useRef(null), touch = useRef(0), audioRef = useRef({});
+  const [muted, setMuted] = useState(() => { try { return localStorage.getItem("alphat-mute") === "1"; } catch { return false; } });
+  const mutedRef = useRef(muted); mutedRef.current = muted;
+  useEffect(() => { const a = audioRef.current; if (a.master) a.master.gain.value = muted ? 0 : .8; try { localStorage.setItem("alphat-mute", muted ? "1" : "0"); } catch {} }, [muted]);
   perkRef.current = perk;
   const [ui, setUi] = useState({ state: "ready", score: 0, best: (() => { try { return +localStorage.getItem("alphat-best3") || 0; } catch { return 0; } })() });
   const bestRef = useRef(ui.best);
@@ -136,6 +139,38 @@ export default function Game({ perk }) {
       const t = { mesh, isPolice }; spawn(t); if (!isPolice) t.z = -rnd(40, 400); scene.add(mesh); traffic.push(t);
     }
 
+    const A = audioRef.current;
+    const initAudio = () => {
+      if (A.ctx) { A.ctx.resume(); return; }
+      const C = new (window.AudioContext || window.webkitAudioContext)(); A.ctx = C;
+      const master = C.createGain(); master.gain.value = mutedRef.current ? 0 : .8; master.connect(C.destination); A.master = master;
+      const nb = C.createBuffer(1, C.sampleRate, C.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+      const noise = (t, d, type, f, g) => { const src = C.createBufferSource(); src.buffer = nb; const fl = C.createBiquadFilter(); fl.type = type; fl.frequency.value = f;
+        const a = C.createGain(); a.gain.setValueAtTime(g, t); a.gain.exponentialRampToValueAtTime(.0001, t + d); src.connect(fl); fl.connect(a); a.connect(master); src.start(t); src.stop(t + d); };
+      const eg = C.createGain(), ef = C.createBiquadFilter(), o1 = C.createOscillator(), o2 = C.createOscillator();
+      ef.type = "lowpass"; ef.frequency.value = 500; o1.type = "sawtooth"; o2.type = "square"; eg.gain.value = 0;
+      o1.connect(ef); o2.connect(ef); ef.connect(eg); eg.connect(master); o1.start(); o2.start();
+      const so = C.createOscillator(), sg = C.createGain(), lfo = C.createOscillator(), lg = C.createGain();
+      so.type = "square"; so.frequency.value = 850; lfo.frequency.value = 2.2; lg.gain.value = 180; lfo.connect(lg); lg.connect(so.frequency);
+      sg.gain.value = 0; so.connect(sg); sg.connect(master); so.start(); lfo.start();
+      const mg = C.createGain(); mg.gain.value = .55; mg.connect(master);
+      const note = (f, t, d, type, g) => { const o = C.createOscillator(), a = C.createGain(); o.type = type; o.frequency.value = f;
+        a.gain.setValueAtTime(g, t); a.gain.exponentialRampToValueAtTime(.0001, t + d); o.connect(a); a.connect(mg); o.start(t); o.stop(t + d); };
+      const kick = (t) => { const o = C.createOscillator(), a = C.createGain(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(40, t + .12);
+        a.gain.setValueAtTime(.6, t); a.gain.exponentialRampToValueAtTime(.0001, t + .18); o.connect(a); a.connect(mg); o.start(t); o.stop(t + .2); };
+      const step = 60 / 122 / 4, roots = [55, 43.65, 65.41, 49], arp = [0, 7, 12, 7, 0, 7, 12, 15]; let n = 0, next = C.currentTime + .1;
+      A.mid = setInterval(() => { while (next < C.currentTime + .25) {
+        const r = roots[Math.floor(n / 16) % 4], st = n % 16;
+        if (st % 4 === 0) kick(next); if (st % 4 === 2) noise(next, .05, "highpass", 7000, .05);
+        if (st % 2 === 0) note(r, next, step * 1.8, "sawtooth", .18);
+        note(r * 8 * 2 ** (arp[st % 8] / 12), next, step * .9, "square", .035); next += step; n++; } }, 60);
+      A.crash = () => { const t = C.currentTime; noise(t, .6, "lowpass", 900, .9); const o = C.createOscillator(), a = C.createGain();
+        o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(30, t + .4); a.gain.setValueAtTime(.8, t); a.gain.exponentialRampToValueAtTime(.0001, t + .45); o.connect(a); a.connect(master); o.start(t); o.stop(t + .5); };
+      A.update = () => { const t = C.currentTime; o1.frequency.setTargetAtTime(40 + s.v * 3.4, t, .05); o2.frequency.setTargetAtTime(60 + s.v * 3.4, t, .05);
+        ef.frequency.setTargetAtTime(250 + s.v * 35, t, .1); eg.gain.setTargetAtTime(s.state === "play" ? .12 : s.state === "ready" ? .05 : 0, t, .15);
+        let d = 999; for (const q of traffic) if (q.police) d = Math.min(d, Math.abs(q.z));
+        sg.gain.setTargetAtTime(s.state === "play" ? Math.max(0, 1 - d / 110) * .045 : 0, t, .1); };
+    };
     let ferrari = null;
     const dress = (car, color) => {
       if (!ferrari) return;
@@ -151,6 +186,7 @@ export default function Game({ perk }) {
       ferrari = gl.scene; ferrari.traverse((o) => { if (/steering|leather|carpet|interior|wipers|carbon/.test(o.name)) o.visible = false; }); dressAll(); });
     const s = { state: "ready", v: 10, x: 0, dist: 0, t: 0, lives: 1, inv: 0, shake: 0 }, keys = { l: 0, r: 0, b: 0 };
     const start = () => {
+      initAudio();
       Object.assign(s, { state: "play", v: 12, x: 0, dist: 0, t: 0, inv: 0, shake: 0, lives: perkRef.current ? 2 : 1 });
       (player.userData.paints || [player.userData.body.material]).forEach((m) => m.color.set(perkRef.current ? 0xffd400 : 0xf5f2e9));
       traffic.forEach((t) => { spawn(t); if (!t.police) t.z = -rnd(60, 400); }); setUi((u) => ({ ...u, state: "play" }));
@@ -190,19 +226,20 @@ export default function Game({ perk }) {
         t.mesh.position.set(t.x, 0, t.z);
         if (t.mesh.userData.lights) { const on = Math.sin(flash * 14) > 0; t.mesh.userData.lights[0].color.set(on ? 0xff2a2a : 0x330808); t.mesh.userData.lights[1].color.set(on ? 0x081433 : 0x2a6bff); t.mesh.userData.pl.color.set(on ? 0xff2a2a : 0x2a6bff); }
         if (play && !s.inv && Math.abs(t.x - s.x) < 1.85 && Math.abs(t.z) < 4.2) {
-          s.lives--; s.inv = 1.6; s.v *= .45; s.shake = .6; t.z = -500; if (s.lives <= 0) end();
+          s.lives--; A.crash?.(); s.inv = 1.6; s.v *= .45; s.shake = .6; t.z = -500; if (s.lives <= 0) end();
         }
       }
       player.position.x = s.x; player.rotation.z = -(s.steer || 0) * .08; player.rotation.y = -(s.steer || 0) * .12;
       player.visible = !(s.inv > 0 && Math.floor(s.inv * 10) % 2); shield.visible = s.lives > 1;
       const sh = s.shake * (Math.random() - .5);
       cam.position.set(s.x * .6 + sh, 2.4 + sh * .5, 7.2); cam.lookAt(s.x * .3, 1.1, -18); cam.fov = 62 + s.v * .25; cam.updateProjectionMatrix();
+      A.update?.();
       if (lapR.current) { lapR.current.textContent = Math.floor(s.dist / 1500) + 1; spdR.current.textContent = Math.round(s.v * 5.5);
         const m = Math.floor(s.t / 60); timeR.current.textContent = `${String(m).padStart(2, "0")}:${(s.t % 60).toFixed(1).padStart(4, "0")}`; }
       composer.render(); raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); removeEventListener("keydown", down); removeEventListener("keyup", up); renderer.dispose(); };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); removeEventListener("keydown", down); removeEventListener("keyup", up); renderer.dispose(); clearInterval(A.mid); A.ctx?.close(); A.ctx = null; A.update = A.crash = null; };
   }, []);
 
   const hold = (d) => ({ onPointerDown: (e) => { e.preventDefault(); touch.current = d; }, onPointerUp: () => (touch.current = 0), onPointerLeave: () => (touch.current = 0), onPointerCancel: () => (touch.current = 0) });
@@ -211,6 +248,7 @@ export default function Game({ perk }) {
       <canvas ref={cv} aria-label="3D racing game" />
       <div className="pill tl">Lap <b ref={lapR}>1</b></div>
       <div className="pill tl2"><b ref={timeR}>00:00.0</b></div>
+      <button className="pill tr2" aria-label={muted ? "Unmute" : "Mute"} onClick={() => setMuted((m) => !m)}>{muted ? "🔇" : "🔊"}</button>
       <button className="pill tr" aria-label="Fullscreen" onClick={() => box.current.requestFullscreen?.()}>⛶</button>
       <div className="pill br"><b ref={spdR}>0</b><small>km/h</small></div>
       <div className="arrows"><button aria-label="Steer left" {...hold(-1)}>‹</button><button aria-label="Steer right" {...hold(1)}>›</button></div>

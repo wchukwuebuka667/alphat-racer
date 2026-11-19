@@ -30,3 +30,4 @@ button:focus-visible{outline:3px solid var(--cy);outline-offset:2px}
 .err{color:var(--red)}.mute,.keys{color:var(--mute)}.keys{font-size:.8rem}
 .pit a,.foot a{color:var(--hz)}.foot{margin-top:2rem;color:var(--mute);font-size:.75rem;border-top:1px solid var(--line);padding-top:1rem}
 @media (max-width:760px){.stage{aspect-ratio:3/4;max-height:80vh}.tl2{left:96px}.pitrow{grid-template-columns:1fr}.kicker{display:none}}
+.tr2{top:12px;right:70px;cursor:pointer;font-size:1.1rem;padding:.4rem .7rem}
