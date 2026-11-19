@@ -69,7 +69,7 @@ function makeCar(color, police) {
 
 export default function Game({ perk }) {
   const box = useRef(null), cv = useRef(null), startRef = useRef(null), perkRef = useRef(perk);
-  const lapR = useRef(null), timeR = useRef(null), spdR = useRef(null), touch = useRef(0), audioRef = useRef({});
+  const lapR = useRef(null), timeR = useRef(null), spdR = useRef(null), touch = useRef(0), audioRef = useRef({}), endRef = useRef(null), exitRef = useRef(null);
   const [muted, setMuted] = useState(() => { try { return localStorage.getItem("alphat-mute") === "1"; } catch { return false; } });
   const mutedRef = useRef(muted); mutedRef.current = muted;
   useEffect(() => { const a = audioRef.current; if (a.master) a.master.gain.value = muted ? 0 : .8; try { localStorage.setItem("alphat-mute", muted ? "1" : "0"); } catch {} }, [muted]);
@@ -192,15 +192,17 @@ export default function Game({ perk }) {
       traffic.forEach((t) => { spawn(t); if (!t.police) t.z = -rnd(60, 400); }); setUi((u) => ({ ...u, state: "play" }));
     };
     startRef.current = start;
-    const end = () => {
+    const end = (quit) => {
       s.state = "over"; const sc = Math.floor(s.dist);
       if (sc > bestRef.current) { bestRef.current = sc; try { localStorage.setItem("alphat-best3", sc); } catch {} }
-      setUi({ state: "over", score: sc, best: bestRef.current });
+      setUi({ state: "over", score: sc, best: bestRef.current, quit: !!quit });
     };
+    endRef.current = () => { if (s.state === "play") end(true); };
+    exitRef.current = () => { s.state = "ready"; setUi((u) => ({ ...u, state: "ready" })); };
     const kd = (e, on) => {
       const k = e.key;
       if (["ArrowLeft", "a", "A"].includes(k)) keys.l = on; else if (["ArrowRight", "d", "D"].includes(k)) keys.r = on;
-      else if (["ArrowDown", "s", "S"].includes(k)) keys.b = on; else if (on && [" ", "Enter"].includes(k) && s.state !== "play") { e.preventDefault(); start(); }
+      else if (["ArrowDown", "s", "S"].includes(k)) keys.b = on; else if (on && k === "Escape" && s.state === "play") end(true); else if (on && [" ", "Enter"].includes(k) && s.state !== "play") { e.preventDefault(); start(); }
     };
     const down = (e) => kd(e, 1), up = (e) => kd(e, 0);
     addEventListener("keydown", down); addEventListener("keyup", up);
@@ -249,15 +251,17 @@ export default function Game({ perk }) {
       <div className="pill tl">Lap <b ref={lapR}>1</b></div>
       <div className="pill tl2"><b ref={timeR}>00:00.0</b></div>
       <button className="pill tr2" aria-label={muted ? "Unmute" : "Mute"} onClick={() => setMuted((m) => !m)}>{muted ? "🔇" : "🔊"}</button>
+      {ui.state === "play" && <button className="pill tr3" aria-label="End run" onClick={() => endRef.current?.()}>END RUN</button>}
       <button className="pill tr" aria-label="Fullscreen" onClick={() => box.current.requestFullscreen?.()}>⛶</button>
       <div className="pill br"><b ref={spdR}>0</b><small>km/h</small></div>
       <div className="arrows"><button aria-label="Steer left" {...hold(-1)}>‹</button><button aria-label="Steer right" {...hold(1)}>›</button></div>
       {perk && <div className="pill perk3">GOLD CAR + SHIELD</div>}
       {ui.state !== "play" && (
         <div className="ov">
-          <h2>{ui.state === "over" ? "CRASHED" : <>ALPHAT<br /><span>RACER</span></>}</h2>
+          <h2>{ui.state === "over" ? (ui.quit ? "RUN ENDED" : "CRASHED") : <>ALPHAT<br /><span>RACER</span></>}</h2>
           {ui.state === "over" && <p>Distance {ui.score} m · Best {ui.best} m</p>}
           <button onClick={() => startRef.current()}>{ui.state === "over" ? "RETRY" : "START ENGINE"}</button>
+          {ui.state === "over" && <button className="ghost" onClick={() => exitRef.current?.()}>EXIT</button>}
           <p className="hint">← → steer · ↓ brake · on phone hold the arrows</p>
         </div>)}
     </div>
